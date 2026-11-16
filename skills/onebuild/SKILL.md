@@ -66,7 +66,11 @@ is a build not delivered.
    patch is not this run: acceptance is one run over the committed head with
    provenance pinned (tree sha, script sha, environment, host). Run it even when
    every clause is covered by a gate — an empty per-build delta means the checks
-   live in the gate, not that the run is redundant.
+   live in the gate, not that the run is redundant. When the project's agent
+   instructions declare checkpoint commands (see `oneplan`), this run is the
+   build's accept command. It asks nothing: a step that needs an answer the
+   author has not recorded stops the run, and that stop is reported, never
+   answered or worked around.
 7. **Record the result in the change spec**: command, verdict, provenance,
    per-check outcome. The raw log or JSON goes to a shared location, not the
    repo; the record goes in the spec. Acceptance inherits the live/external
@@ -77,11 +81,26 @@ is a build not delivered.
    discharge is handed back, never skipped or marked passed: list the build's
    "Author action required at completion" items, set the build's status to
    `executed, pending author verification`, and end with that stated hand-off.
+   With checkpoint commands, these clauses are the build's review questions,
+   answered at the next `oneplan` checkpoint.
    This is distinct from done and from blocked, where a patch could not be
    completed.
 
-Fix acceptance failures and re-verify until it passes, keeping all fixes
-**uncommitted** — report the fix diff with its verification. Commit nothing
-beyond the planned patches; acceptance fixes are committed only at the
-`oneplan` checkpoint on author approval.
+Fix acceptance failures inside the build's scope and re-verify until it
+passes.
+
+- When the failing evidence runs against the committed head (a CI job, a
+  workflow dispatch), the fix must be committed to be tested: commit each as
+  `<TAG>: Fix <details>` on the build's branch, push it within the build's
+  authorizations, and retry the clause while its authorization's attempt cap
+  allows. Reproduce the failure locally first, and batch fixes into one push.
+- Otherwise keep the fixes **uncommitted** and report the fix diff with its
+  verification; they are committed at the `oneplan` checkpoint on author
+  approval.
+- Add a regression test for each fix, with a negative control that fails
+  without it.
+- Stop and report only when the next step is not authorized, the attempt cap
+  is spent, the fix would change the build's scope, or a live clause cannot be
+  observed at all (denied access, a missing credential). Never ask the author
+  to approve a fix list, a push, or a retry the authorizations already cover.
 

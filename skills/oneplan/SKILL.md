@@ -50,6 +50,18 @@ A finished change spec is a record of what was built, not a plan: plan from this
 
 One cycle turn covers Steps 1–3 below and ends at the author checkpoint. Execution (`onebuild`) runs between checkpoints, possibly by a different agent, so both the build record and the approved plan must be self-contained in the change spec.
 
+## Checkpoint commands
+
+A project may declare checkpoint commands in its agent instructions (`AGENTS.md`, `CLAUDE.md`), one per role, with `<tag>` standing for the build tag:
+
+- **authorize**: asks the author to authorize the build's costly or outward actions (pushes, paid runs, workflow dispatches) and records the answers. Run at Step 4, once the author approves the plan, in the same sitting as the previous build's review.
+- **accept**: gathers the build's evidence (gates on the committed head, observed live effects) and asks nothing. The executor runs it at the end of execution; a step that needs an answer the author has not recorded stops it.
+- **review**: runs accept, then asks the author's verification questions about the recorded evidence. Run at Step 4 of the next cycle, before authorize, in the same sitting.
+
+All author answers are given at a checkpoint, never mid-execution: the author intervenes once per cycle, in one sitting at Step 4 that runs the previous build's review and the new build's authorize back to back. The author's own operations that follow a build, such as the merge and the release, happen before the cycle turn starts. Start authorize and review where the author can answer them, such as a terminal tab the author types in; never answer them on the author's behalf. A project that declares no commands follows the steps below without them.
+
+An authorization names the action, its scope, and a cap on attempts, for example "dispatch `release.yml` from the PR branch on any head, at most 3 times". A failed attempt is fixed and retried inside that grant without asking again; a new head of the same branch is not a new action. Changing the action, widening its scope, or spending the cap asks the author again.
+
 ## Step 1: Review the previous build
 
 Skip if this is the first build of the change spec. The previous build may have been executed by a different agent — review from the record (the change spec and commits tagged `<tag><build>.*`), not from conversation memory.
@@ -57,7 +69,7 @@ Skip if this is the first build of the change spec. The previous build may have 
 - Check the commits against the build's planned patches by comparing each commit subject to the patch name literally; note drift.
 - Check that the previous build record has a valid `Status:` line and set it from what the record shows. Any of the four statuses the record layout lists is valid, including `planned, approved`. Flag a fully specified build record without a valid `Status:` line as a defect.
 - Check the previous build's "Author action required at completion" items. An outstanding one blocks the next build: present it instead of planning past it.
-- Run the build's acceptance check. Acceptance inherits the live/external rule: green suite alone does not pass a live claim — observe the real effect; missing or denied proof is a block, not a pass. Fix issues and re-verify until it passes, keeping all fixes **uncommitted**.
+- Run the build's acceptance check: its accept command when the project declares checkpoint commands. It asks nothing; the review questions wait for Step 4. The author has merged and released before the turn starts. Acceptance inherits the live/external rule: green suite alone does not pass a live claim — observe the real effect; missing or denied proof is a block, not a pass. Fix issues and re-verify until it passes, keeping all fixes **uncommitted**.
 - For patches that claimed a live/external effect, confirm the record shows that effect was observed (not only a green suite or synthetic stand-in). A blocked live step that was marked done or skipped is drift.
 - Reflect: if the build seriously drifted from its plan, propose a process change.
 
@@ -84,8 +96,14 @@ Skip if this is the first build of the change spec. The previous build may have 
 - Place each check of an external contract on the patch that introduces it;
   final acceptance re-checks it, it does not discover it.
 - Edit the acceptance harness during this turn. The per-build delta is part of
-  the plan the checkpoint presents, not something execution improvises.
-- For each acceptance clause, ask who can execute it. A clause only the author can discharge (a write to a personal account, a production change, a physical observation, a paid call, a credential the agent does not hold) goes in an "Author action required at completion" section of the build, beside the patches rather than inside the acceptance prose. Name each action, who does it, and the clause it discharges. Shape it for a human: one reviewable file beats many interactive prompts.
+  the plan the checkpoint presents, not something execution improvises. With
+  checkpoint commands, the harness defines the build's authorize, accept and
+  review: each authorization covers its action, scope and attempt cap, so
+  changing the action or the scope asks again but a retry within the cap does
+  not, and each review question takes the evidence it is about. Size the cap
+  from the clause's cost (a paid or slow run gets a small one) and state it in
+  the question.
+- For each acceptance clause, ask who can execute it. A clause only the author can discharge (a write to a personal account, a production change, a physical observation, a paid call, a credential the agent does not hold) goes in an "Author action required at completion" section of the build, beside the patches rather than inside the acceptance prose. Name each action, who does it, and the clause it discharges. Shape it for a human: one reviewable file beats many interactive prompts. With checkpoint commands, an authorization is an authorize question and a verification is a review question; the section lists them.
 - Assign the next sequential build number under the change spec's tag, e.g. `LC1`, at planning time only; backlog items carry no numbers. The number stays with the build.
 
 ## Step 3: Plan the patches
@@ -109,7 +127,7 @@ Break the build into ordered atomic patches named `<TAG><n>.1…`, the same stri
 
 ## Step 4: Author checkpoint
 
-Make proposed changes to the change spec: append the new build record after the existing ones, with `Status: planned, awaiting author checkpoint`; the backlog stays last. When the author approves the plan, set `Status: planned, approved <date>`.
+Make proposed changes to the change spec: append the new build record after the existing ones, with `Status: planned, awaiting author checkpoint`; the backlog stays last. When the author approves the plan, set `Status: planned, approved <date>`, then, when the project declares checkpoint commands, start one terminal tab for the author that runs the previous build's review and then the new build's authorize, so the author answers everything in one sitting. A failed review answer ends the sitting: rework the plan before asking for authorization.
 
 Present in one message: 
 - the previous-build review (acceptance result, any uncommitted fix diff with its verification and a proposed commit message, reflection)
